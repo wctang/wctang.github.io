@@ -44,7 +44,7 @@ core.safecrlf warn   # 提交包含混合换行符的文件时给出警告
 New System: .gitattributes text  (Git 1.7.2 and above.)
 可用 .gitattributes 定義，優先於個人設定
 如果 .gitattributes 內無定義，則 fall back 至個人 core.autocrlf 的設定 (舊系統)
-This is done with a text attribute in your repository’s .gitattributes file. 
+This is done with a text attribute in your repository’s .gitattributes file.
 設定值:
 text: 提交時 CRLF->LF, 檢出時 LF->CRLF
 -text: 提交檢出均不轉換
@@ -98,7 +98,25 @@ git reset --hard master
 
 http://stackoverflow.com/questions/9392365/how-would-git-handle-a-sha-1-collision-on-a-blob
 
-# 觀念
+
+## .git 內容
+- 4 種物件: blob, tree, commit, annotated tag, 每個都有 sha1, type, size, content
+- 指標 (ref): branch, lightweight tag, HEAD
+~~~~~~
+<working-tree>
+----------------------------------
+.git     [index]
+
+         <commit> <--- *branch <--- *HEAD
+            |
+         <commit>
+         /      \
+    <commit>  <commit>  <--- *tag
+       |     /
+    <commit>
+~~~~~~
+
+## 觀念
 
 working-tree (working directory)
 : 工作區
@@ -113,22 +131,6 @@ stage (index)
     實際上不是 tree, 而是個 flattened manifest.
     http://blog.ossxp.com/2010/11/2166/
 
-~~~~~~
-      <working-tree> 
-     ---------------------------------- 
-         <index>       <HEAD>       .git
-                         |
-         <commit> <--- <branch>
-            |
-         <commit> 
-         /      \
-    <commit>  <commit>
-       |     /
-    <commit>
-~~~~~~
-
-- 4 種物件: blob, tree, commit, annotated tag, 每個都有 sha1, type, size, content
-- 指標 (ref): branch, lightweight tag, HEAD
 
 HEAD
 :   通常代表最近的一次提交, next parent. 現在 working-tree 對應的 head, commit 會加入的地方. 一般來說 HEAD 會是 ref to branch, 不然就是 detached HEAD
@@ -136,8 +138,33 @@ HEAD
 - 在 packs 中會用 delta 的方式存放
 - git 在 local clone 時會使用 hard link.
 
+## 情況
 
-# 慣用法
+- 剛才的 修改 後悔了
+  - `git checkout -- <files>`
+    - 由 stage 回復 working
+
+- 剛才的 add 後悔了
+  - `git reset -- <files>`
+    - 由 repo 回復 stage
+
+- 剛才的 Commit 後悔了
+  - `git reset HEAD^`
+    - (mixed) 重置 stage, 保留 working
+  - `git reset --soft HEAD^`
+    - 保留 stage, 保留 working
+  - `git reset --hard HEAD^`
+    - 重置 stage, 重置 working
+  - `git commit --amend`
+    - 將"前一次" commit 和現在的 stage 合併，並重新 commit
+  - `git revert HEAD`
+    - commit 最後一次 commit 的反操作
+  - `git cherry-pick <commit>...`
+    - 將 commit 的變化 apply 並 commit.
+
+
+
+## 慣用法
 - 用 "`--`" 分隔 commit 和 path (以免名稱相同)
 - 指令中 commit 未指定則為 HEAD
 
@@ -146,15 +173,15 @@ HEAD
   |
   B       HEAD~1 = HEAD~ = HEAD^1 = HEAD^
   | \
-  |  C    HEAD~1^2 
+  |  C    HEAD~1^2
   D  |    HEAD~~ = HEAD~2 = HEAD~1^1 = HEAD^^
   | /
   E       HEAD~~~ = HEAD~3 = HEAD~2^1
 ~~~~~~
 
 - 版本範圍 "`A..B`": (B 向上走到底) 減去 (A 向上走到底)
-    - 如果 A 是 B 的父代，`A..B` = A 到 B 間的版本，"不包括 A"
-    - 如果 A 是 B 的兄弟，`A..B` = B 向上走到和 A 的共同父代，"不包括這個父代"
+  - 如果 A 是 B 的父代，`A..B` = A 到 B 間的版本，"不包括 A"
+  - 如果 A 是 B 的兄弟，`A..B` = B 向上走到和 A 的共同父代，"不包括這個父代"
 
 # 使用
 ## 常用指令 & 反操作
@@ -171,17 +198,17 @@ HEAD
 ~~~~~~
 
 git init --bare
-:   server 的 repository 要用 `--bare` 建立，以避免 push 進 woriking-tree 造成的 warning.    
+:   server 的 repository 要用 `--bare` 建立，以避免 push 進 woriking-tree 造成的 warning.
 
 git add -p <files>
 :   交互式選擇要加入的 hunks
 
 git status
-:   查看 working-tree / stage 的內容 
+:   查看 working-tree / stage 的內容
 
 ## checkout
 
-修改 HEAD 所指向的 分支
+修改 HEAD 的指向
 
 `git checkout <branch>`
 :   切換 branch. (將 HEAD 指向 <branch>, 更新 stage & working-tree)
@@ -194,21 +221,18 @@ git status
 
 ## reset
 
-修改 目前分支 所指向的 branch
-
 `git reset [<commit>] -- <paths>...`
-:   "un-stage", git add 的反操作, 將 stage 中的 paths 還原為 commit HEAD 中的版本, 不影響 working-tree & HEAD.
+- git add 的反操作, 將 stage 中的 paths 還原為 commit 的版本, 不影響 working-tree & HEAD.
 
 `git reset (--soft | --mixed | --hard) [-q] [<commit>]`
-:   移動 HEAD 所指向的 branch 至指定的 commit (detached HEAD 則是單純移動 HEAD), 並且：
-
-    - `--soft`    # 不重置 stage / working-tree
-    - (`--mixed`) # 重置 stage, 但不重置 working-tree. (un-stage)
-    - `--hard`    # **!!危險!!** 重置 stage 和 working-tree
+- 移動 HEAD 所指向的 branch 至指定的 commit (detached HEAD 則是單純移動 HEAD), 且：
+  - `--soft`    # 保留 stage, 保留 working
+  - (`--mixed`) # 重置 stage, 保留 working
+  - `--hard`    # 重置 stage, 重置 working **!!危險!!**
 
 常用法:
 
-- `git reset --soft HEAD^` # 取消前一次 commit，保留 stage/working-tree, 可再重新 commit 一次.
+- `git reset --soft HEAD^` # 取消前一次 commit
 - `git reset --hard` # **!!危險!!** 重置 stage & working-tree 為 HEAD 內容 = 還原成修改前，放棄修改
 - `git reset --hard HEAD^` # **!!危險!!** 取消前一次 commit，且不保留 stage/working-tree (可用 git reset --hard HEAD@{1} 再回復)
 
@@ -220,9 +244,10 @@ git status
 
 <http://progit.org/2011/07/11/reset.html>
 
+
 ## revert
 
-`git revert <commit>` 
+`git revert <commit>`
 :   將要撤銷的該次 commit 的修改反轉，然後和 working-tree 做 merge, 會形成一次 rollback commit.
 
 
@@ -241,9 +266,9 @@ git status
 實際上也是存在 objects 中，用 refs/stash 指向
 
 `git stash`
-:    
+:
 `git stash pop`
-:    
+:
 
 
 ## tag
@@ -264,17 +289,19 @@ git status
 `git pull origin refs/tags/xxxxx`
 :   更新 tag (已有同名 tag, 就不會再從上游同步 (不會自動跟隨)，要手動更新才行)
 
+預設只有 annotated tag 會自動 push, lightweight tag 不會
+
 
 ## branch
 
 commit object 的 指標 (ref).
 
 `git branch xxx` # create branch
-:    
+:
 `git branch -r` # show remote branch
-:    
+:
 `git branch --track <branch name> <remote branch>` # 建立 branch 並設定 tracking branch
-:    
+:
 
 
 ## merge
@@ -304,7 +331,7 @@ remote repository / branch
 * tracking branch: is a local branch that is connected to a "remote branch"
 * 對 tracking branch 做 push/pull 會自動對其對應的 remote branch 做 push/pull.
 * clone 時會設定 master 是 tracking branch to origin/master
-* 不能直接修改或 local commit 
+* 不能直接修改或 local commit
 * stored in .git/refs/remotes/
 * remote 只能進行 fast-forward, push 時不會新增 commit (不會merge)，所以當 push 時, remote 和 local 端不相容，必需先 fetch, merge, 再 push，不會自動進行
 * 因為單純用 git push, 預設的行為是把自己所有和遠端有 tracking 關係的 branch 都 push，不一定是想要的行為，所以會有 warning。所以最好能設定 git config (--global) push.default=current 來只 push current branch。
@@ -340,15 +367,6 @@ Linus: "Eventually you’ll discover the Easter egg in Git: all meaningful opera
 
 * git rebase -i HEAD~3 // 將範圍內的 commit 進入選取階段
 
-
-
-## 修改歷史版本 (常需和 reset 合併使用) 
-
-`git commit --amend`
-:   修改最後的一次 commit. 將前一次 commit 和現在的 stage 合併，並重新 commit
-
-`git cherry-pick <commit>...`
-:   將 <commit> 的變化 apply 並 commit.
 
 
 
@@ -393,63 +411,32 @@ the submodule support just stores the submodule repository location and commit I
 
 
 
-
-
-
-
-
-
-# 比較
-
-## v.s. Mercurial
-
-- http://felipec.wordpress.com/2011/01/16/mercurial-vs-git-its-all-in-the-branches/
-- http://stackoverflow.com/questions/1598759/git-and-mercurial-compare-and-contrast
-- http://blog.ossxp.com/2011/03/2370/
-- 主要差異在 branch.
-    - git branch: refs, pointer to commit.
-	- mercurial branch: linear sequence of changesets. "default" is the default branch name. branch name is an attribute associated with a changeset.
-
-## v.s. subversion
-
-- svn 在 merge 時記錄的東西不足，以至於要指定 merge 的 reversion 區間，否則會要重覆解 conflict
-- 所有的東西在 merge 時匯入，無法分辨單純為了解 conflict 的改變
- 
-
 # 參考資料
 
--Linus Torvalds on git <http://www.youtube.com/watch?v=4XpnKHJAok8>
-    - Every developer's working-tree is a branch.
-    - Every single person has it's own branch. It's not horrible, it just is.
-    - Every body have commit access, on it's own branch.
-    - Subversion make branch very cheap, but who care? branch is complete useless unless you merge them. branching is not the issue, merging is.
-- A Visual Git Reference http://marklodato.github.com/visual-git-guide/index-en.html
-- Pro Git: http://progit.org/book/
-- The Git Community Book: http://book.git-scm.com/index.html
-- Git Magic: http://www-cs-students.stanford.edu/~blynn/gitmagic/
+- [Linus Torvalds on git](http://www.youtube.com/watch?v=4XpnKHJAok8)
+  - Every developer's working-tree is a branch.
+  - Every single person has it's own branch. It's not horrible, it just is.
+  - Every body have commit access, on it's own branch.
+  - Subversion make branch very cheap, but who care? branch is complete useless unless you merge them. branching is not the issue, merging is.
+- [為你自己學 Git](https://gitbook.tw/)
+- [A Visual Git Reference](http://marklodato.github.com/visual-git-guide/index-en.html)
+- [Pro Git](http://progit.org/book/)
+- [The Git Community Book](http://book.git-scm.com/index.html)
+- [Git Magic](http://www-cs-students.stanford.edu/~blynn/gitmagic/)
 - git ready: http://gitready.com/
-
 - http://gitstory.wordpress.com/category/git/
-
 - Getting Git http://gitcasts.com/posts/railsconf-git-talk
 - Git the basics http://excess.org/article/2008/07/ogre-git-tutorial/
 - Randal Schwartz on git  http://www.youtube.com/watch?v=8dhZ9BXQgc4
-
 - http://linux.chinaunix.net/bbs/thread-920610-1-1.html
 - http://www.kernel.org/pub/software/scm/git/docs/everyday.html
-
 - Branching and merging with git: http://lwn.net/Articles/210045/
-
 - http://git.or.cz/gitwiki/GitSvnComparsion
-
 - 看日记学git http://roclinux.cn/?cat=72
-
 - http://www.vogella.com/articles/Git/article.html
-
 - http://www.dribin.org/dave/blog/archives/2007/12/28/dvcs/
 - http://docs.google.com/Present?docid=ddwtzk7_10877cgr7hwhq
 - http://sayspy.blogspot.com/2006/11/bazaar-vs-mercurial-unscientific.html
-
 - Glossary http://git.or.cz/gitwiki/GitGlossary
 
 
@@ -616,7 +603,7 @@ sudo htpasswd -c ~git/htpasswd xxxx
 
 
 
-	
+
 -------
 
 # 安裝 gitweb + git service on ubuntu
